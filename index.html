@@ -1143,7 +1143,12 @@ document.addEventListener('visibilitychange', async()=>{
   if(!CFG.supabaseUrl || !CFG.supabaseKey || !window.supabase){
     V.innerHTML='<div class="top"><h1>준비가 아직 안 됐어요</h1><div class="empty">config.js 파일에 Supabase 주소와 키를 넣어 주세요.'+(window.supabase?'':'<br>(인터넷 연결도 확인해 주세요)')+'</div></div>'; return;
   }
-  sb = window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseKey, {auth:{persistSession:true, autoRefreshToken:true}});
+  // 주소 뒤에 /rest/v1 같은 것이 붙어 있거나 대시보드 주소를 넣었어도 프로젝트 주소만 남기기
+  let url = String(CFG.supabaseUrl).trim();
+  const dash = /supabase\.com\/dashboard\/project\/([a-z0-9]+)/i.exec(url);
+  if(dash) url = 'https://'+dash[1]+'.supabase.co';
+  const m = /^(https?:\/\/[^\/?#]+)/i.exec(url); if(m) url = m[1];
+  sb = window.supabase.createClient(url, String(CFG.supabaseKey).trim(), {auth:{persistSession:true, autoRefreshToken:true}});
   await start();
 })();
 })();

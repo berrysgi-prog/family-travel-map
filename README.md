@@ -1,24 +1,22 @@
-# 우리 가족 나들이 지도 (웹 시험판)
-
-## 올리는 방법 (GitHub Pages)
-1. GitHub에 새 저장소를 만들고 이 폴더의 파일을 모두 올려요. `data` 폴더도 꼭 함께 올려야 해요.
-2. 저장소 Settings → Pages에서 Branch를 `main`, 폴더를 `/ (root)`로 정하고 저장해요.
-3. 1~2분 뒤 나오는 주소(https://아이디.github.io/저장소이름/)를 휴대폰으로 열어요.
-4. 홈 화면에 추가해서 앱처럼 써요.
-   - 아이폰: 사파리 → 공유 버튼 → "홈 화면에 추가"
-   - 안드로이드: 크롬 → 메뉴(⋮) → "홈 화면에 추가"
-
-## 꼭 알아 둘 것
-- 기록과 사진은 그 휴대폰의 브라우저 안에만 저장돼요. 다른 휴대폰과는 아직 공유되지 않아요.
-- 아이폰은 홈 화면에 추가하지 않고 사파리에서만 쓰면, 오래 열지 않을 때 기록이 지워질 수 있어요. 꼭 홈 화면에 추가해서 써 주세요.
-- 첫 화면 아래 "백업 저장"으로 가끔 백업 파일을 받아 두세요. 휴대폰을 바꾸면 "백업 불러오기"로 옮길 수 있어요.
-- "지금 있는 곳" 기능은 https 주소(GitHub Pages)에서만 동작해요.
-- 사진 위치는 갤러리 원본 사진에서 읽어요. 카카오톡으로 받은 사진은 위치 정보가 지워져 있어요.
+# 우리 가족 나들이 지도 (가족 공유판)
 
 ## 파일
-- index.html: 앱 전체
-- data/korea.json: 전국 시·도 지도
-- data/sido/*.json: 시·도별 시·군·구 지도
-- data/sgg/*.json: 시·군·구별 동네(행정동) 지도
-- data/index.json: 사진 위치로 동네를 찾을 때 쓰는 목록
-- 지도 경계: vuski/admdongkor 행정동 경계(2025년 4월 기준)
+- index.html: 앱 전체 (지도 데이터 포함)
+- config.js: Supabase 주소·키, 가족 이름과 계정 이메일 ← 이 파일만 내 정보로 고쳐요
+- supabase-setup.sql: Supabase SQL Editor에 한 번 붙여 넣는 설정
+- manifest.json, 아이콘 3개: 홈 화면 설치용
+
+## 순서
+1. Supabase에서 프로젝트 만들기 (지역: Northeast Asia (Seoul))
+2. SQL Editor에 supabase-setup.sql 내용을 붙여 넣고 Run
+3. Authentication에서 새 가입 막기(Allow new users to sign up 끄기)
+4. Authentication → Users → Add user로 가족 계정 만들기 (Auto Confirm 체크)
+5. API Keys 화면의 Project URL과 publishable(또는 anon public) 키를 config.js에 넣기
+6. GitHub 저장소에 index.html, config.js 올리기
+7. 휴대폰에서 열고 이름 고르고 가족 비밀번호로 들어가기
+
+## 알아 둘 것
+- config.js의 키는 공개돼도 괜찮은 키예요. secret / service_role 키는 절대 넣지 마세요.
+- 새 가입을 막아 두었기 때문에, 직접 만든 가족 계정만 들어올 수 있어요.
+- 무료 요금제는 7일 동안 아무도 열지 않으면 프로젝트가 잠시 멈춰요. 메일이 오면 대시보드에서 Restore를 누르면 돼요.
+- 무료 사진 공간은 1GB예요. 사진 1장이 약 0.3MB라 3,000장쯤 들어가요.

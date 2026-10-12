@@ -278,6 +278,49 @@ async function insertVisit(v){
   const nv = rowToVisit(row); DB.visits.push(nv); return nv.id;
 }
 const josa = (w,a,b) => { const c=String(w||'').charCodeAt(String(w||'').length-1); return w + ((c>=0xAC00&&c<=0xD7A3&&(c-0xAC00)%28)?a:b); };
+const apiCache = {};
+async function placesApi(body){
+  const key = JSON.stringify(body);
+  if(apiCache[key]) return apiCache[key];
+  const {data, error} = await sb.functions.invoke('places', {body});
+  if(error){ let m=''; try{ m=(await error.context.json()).error; }catch(e){} throw new Error(m || error.message || '연결 오류'); }
+  if(!data || data.error) throw new Error((data&&data.error)||'빈 응답');
+  return apiCache[key] = data.items || [];
+}
+function groupCenter(g){
+  const f=g.fit, x=g.W/2, y=g.H/2;
+  return {lon:(x-f.ox)/(f.K*f.sc), lat:-(y-f.oy)/f.sc, radius:Math.max(2500, Math.min(20000, Math.round(Math.min(g.W,g.H)/2/f.sc*111000)))};
+}
+const SIDO_PRE = {서울:['서울'],부산:['부산'],대구:['대구'],인천:['인천'],광주:['광주'],대전:['대전'],울산:['울산'],세종:['세종'],경기:['경기'],강원:['강원'],충북:['충청북','충북'],충남:['충청남','충남'],전북:['전라북','전북'],전남:['전라남','전남'],경북:['경상북','경북'],경남:['경상남','경남'],제주:['제주']};
+const isCarCamp = c => /자동차야영장/.test(c.induty) || c.carav;
+const kakaoMap = it => 'https://map.kakao.com/link/map/'+encodeURIComponent(it.name)+','+it.lat+','+it.lon;
+const writeLink = (it,type) => '#/write?ll='+it.lon.toFixed(6)+','+it.lat.toFixed(6)+'&n='+encodeURIComponent(it.name)+'&t='+encodeURIComponent(type);
+function poiThumb(it){ return it.img ? '<div class="pol" style="width:58px"><div class="ph" style="height:48px"><img src="'+esc(it.img)+'" alt="" loading="lazy" referrerpolicy="no-referrer"></div></div>' : '<div class="pol" style="width:58px"><div class="ph" style="height:48px;color:#fff">'+(it.kind==='camp'?IC.tent:IC.mtn)+'</div></div>'; }
+function poiRow(it, i, been){
+  const meta = it.kind==='camp' ? [it.sigungu, it.dist?(it.dist>=1000?(it.dist/1000).toFixed(1)+'km':Math.round(it.dist)+'m'):''].filter(Boolean).join(' · ') : it.addr.replace(/^\S+[도시]\s/,'');
+  return '<button class="row" data-poi="'+i+'">'+poiThumb(it)+'<span class="t"><span class="n">'+esc(it.name)+(been?'<span class="tag 기타">다녀옴</span>':'')+'</span><span class="m">'+esc(meta)+'</span></span>'+IC.chev+'</button>';
+}
+function poiSheet(it){
+  const bg=document.createElement('div'); bg.className='sheet-bg';
+  const type = it.kind==='camp' ? '차박' : '관광지';
+  const tags = it.kind==='camp' ? [...it.induty.split(','), ...it.sbrs.split(',').slice(0,6)].map(x=>x.trim()).filter(Boolean) : [];
+  bg.innerHTML='<div class="sheet" role="dialog" aria-label="'+esc(it.name)+'"><span class="grab"></span>'+
+    (it.img?'<div class="pol" style="width:100%"><div class="ph" style="height:190px"><img src="'+esc(it.img)+'" alt="" referrerpolicy="no-referrer"></div></div>':'')+
+    '<h1 style="font-size:24px">'+esc(it.name)+'</h1>'+
+    '<span style="display:flex;gap:4px;align-items:flex-start;font-size:15px;color:var(--sub)">'+IC.pin+esc(it.addr)+'</span>'+
+    (it.intro?'<span class="hint">'+esc(it.intro)+'</span>':'')+
+    (tags.length?'<div style="display:flex;flex-wrap:wrap;gap:6px">'+tags.map(t=>'<span class="tag 관광지" style="font-size:13px;padding:4px 9px">'+esc(t)+'</span>').join('')+'</div>':'')+
+    '<a class="cta" href="'+writeLink(it,type)+'">'+IC.cam+'여기 다녀왔어요 · 기록 남기기</a>'+
+    '<div class="btn2">'+(it.url?'<button data-href="'+esc(it.url)+'">예약 페이지</button>':'')+(it.tel?'<button data-href="tel:'+esc(it.tel.replace(/[^0-9+]/g,''))+'">전화하기</button>':'')+'<button data-href="'+esc(kakaoMap(it))+'">지도 앱에서 보기</button></div>'+
+    (it.kind==='camp'?'<div class="note">차박 가능 여부는 자리마다 다를 수 있어요. 가기 전에 전화로 한 번 더 확인해 주세요.</div>':'')+
+    '<button class="minibtn" style="height:48px" data-close>닫기</button></div>';
+  document.body.appendChild(bg);
+  bg.onclick=e=>{
+    const h=e.target.closest('[data-href]'); if(h){ window.open(h.dataset.href, h.dataset.href.startsWith('tel:')?'_self':'_blank', 'noopener'); return; }
+    if(e.target===bg || e.target.closest('[data-close]') || e.target.closest('a')) bg.remove();
+  };
+}
+const apiErrText = e => /DATA_GO_KR_KEY|SERVICE_KEY|공공데이터/.test(String(e.message)) ? '관광 정보 키 설정을 확인해 주세요 ('+esc(e.message)+')' : '관광 정보를 불러오지 못했어요. 잠시 뒤 다시 열어 주세요.';
 const netErr = () => toast('저장하지 못했어요. 인터넷 연결을 확인하고 다시 해 주세요');
 
 // 예전(휴대폰 안) 기록이나 백업 파일을 가족 지도로 올리기: 바꿔치기가 아니라 합치기
@@ -577,8 +620,28 @@ async function renderGroup(gk){
   '<div class="pad stack" style="padding-top:10px">'+
     mine.map(p=>placeRow(p,{meta:(p,lv)=>p.dongName+' · '+fmtDate(lv&&lv.date)})).join('')+
     '<a class="cta" style="background:#fff;color:var(--navy);box-shadow:none;border:1.5px dashed var(--navy);font-size:17px;height:54px" href="#/write?g='+gk+'">+ '+esc(g.name)+'에 기록 남기기</a>'+
-  '</div>';
+  '</div>'+
+  '<div class="pad stack" style="padding-top:18px"><div style="display:flex;align-items:center;gap:6px;color:var(--navy)">'+IC.mtn+'<span class="mh" style="padding:0;font-size:17px;color:var(--ink)">'+esc(g.name)+' 가 볼 만한 곳</span></div><div class="stack" id="tourBox"><div class="hint">불러오는 중…</div></div>'+
+    '<a class="cta" style="background:var(--green-bg);color:var(--green);box-shadow:none;font-size:17px;height:56px;margin-top:6px" href="#/camp/'+g.sido+'?g='+gk+'">'+IC.tent+esc(g.name)+' 근처 차박할 곳</a></div>';
+  loadTour(g, mine);
   $('#map').onclick = e => { const p=e.target.closest('[data-k]'); if(!p) return; const d=g.dongs.find(x=>x.c===p.dataset.k); dongSheet(g, d); };
+}
+async function loadTour(g, mine){
+  const here = location.hash, c = groupCenter(g);
+  let list;
+  try{ list = await placesApi({kind:'tour', lon:c.lon, lat:c.lat, radius:c.radius, rows:40}); }
+  catch(e){ if(location.hash===here && $('#tourBox')) $('#tourBox').innerHTML='<div class="hint">'+apiErrText(e)+'</div>'; return; }
+  if(location.hash!==here || !$('#tourBox')) return;
+  const names = new Set(mine.map(p=>normName(p.name)));
+  let shown = 8;
+  const draw = () => {
+    $('#tourBox').innerHTML = list.length ? list.slice(0,shown).map((it,i)=>poiRow(it,i,names.has(normName(it.name)))).join('') + (list.length>shown?'<button class="minibtn" style="height:48px" data-more>더 보기 ('+(list.length-shown)+'곳)</button>':'') : '<div class="hint">이 근처에 등록된 관광지가 없어요.</div>';
+  };
+  draw();
+  $('#tourBox').onclick = e => {
+    if(e.target.closest('[data-more]')){ shown+=8; draw(); return; }
+    const b=e.target.closest('[data-poi]'); if(b) poiSheet(list[+b.dataset.poi]);
+  };
 }
 function dongSheet(g, d){
   const ps = placesSorted(livePlaces().filter(p=>p.dong===d.c));
@@ -741,15 +804,31 @@ function renderRegionList(sid){
       '<a class="cta" style="background:var(--green-bg);color:var(--green);box-shadow:none;font-size:17px;height:56px" href="#/camp/'+sid+'">'+IC.car+esc(s.s)+' 차박할 곳 찾기</a>'+
       (ps.map(p=>placeRow(p,{meta:(p,lv)=>fmtDate(lv&&lv.date)})).join('')||'<div class="empty">아직 기록이 없어요.</div>')+'</div>';
 }
-function renderCamp(sid){
-  const s=sidoInfo(sid);
-  V.innerHTML='<div class="top">'+backBtn('#/list/region/'+sid, s.n)+
-    '<div class="stack" style="gap:4px;padding:0 4px"><h1>'+esc(s.s)+' 차박할 곳</h1></div></div>'+
-    '<div class="pad stack">'+
-      '<div class="note">이 화면은 시험판이라 아직 캠핑장 목록을 직접 보여 주지 못해요. 한국관광공사 고캠핑 연결은 가족 공유 앱으로 바꿀 때 함께 붙일 예정이에요. 지금은 고캠핑 누리집에서 찾아보실 수 있어요.</div>'+
-      '<a class="cta" href="https://www.gocamping.or.kr/" target="_blank" rel="noopener">고캠핑 누리집 열기</a>'+
-      '<div class="hint">차박 가능 여부는 자리마다 다를 수 있어요. 가기 전에 전화로 한 번 더 확인해 주세요. 다녀온 캠핑장은 기록할 때 종류를 "차박"으로 고르면 차박만 모아 볼 수 있어요.</div>'+
-    '</div>';
+let campAll=true, campCity='';
+async function renderCamp(sid, q){
+  const s_=sidoInfo(sid), here=location.hash;
+  let title=s_.s+' 차박할 곳', backH='#/list/region/'+sid, backL=s_.n, g=null;
+  if(q.g){ g=await getGroup(q.g); title=g.name+' 근처 차박할 곳'; backH='#/g/'+q.g; backL=g.name; }
+  V.innerHTML='<div class="top">'+backBtn(backH, backL)+'<div class="stack" style="gap:4px;padding:0 4px"><h1>'+esc(title)+'</h1><span class="s" style="font-size:15px;color:var(--sub)">한국관광공사 고캠핑에 등록된 캠핑장이에요</span></div></div>'+
+    '<div class="chips" id="cf"></div><div class="pad stack" id="campBox"><div class="hint">캠핑장 정보를 불러오는 중…</div></div>';
+  let list;
+  try{
+    list = g ? await placesApi({kind:'campNear', ...(({lon,lat})=>({lon,lat}))(groupCenter(g)), radius:20000, rows:50})
+             : await placesApi({kind:'campSido', prefixes:SIDO_PRE[s_.s]||[s_.s]});
+  }catch(e){ if(location.hash===here) $('#campBox').innerHTML='<div class="empty">'+apiErrText(e)+'</div>'; return; }
+  if(location.hash!==here) return;
+  const cities=[...new Set(list.map(c=>c.sigungu).filter(Boolean))].sort();
+  if(campCity && !cities.includes(campCity)) campCity='';
+  const draw=()=>{
+    $('#cf').innerHTML='<button class="chip" data-a="car" aria-pressed="'+campAll+'">차박(자동차야영장)만</button>'+(g?'':'<button class="chip" data-c="" aria-pressed="'+(!campCity)+'">전체 지역</button>'+cities.map(c=>'<button class="chip" data-c="'+esc(c)+'" aria-pressed="'+(campCity===c)+'">'+esc(c)+'</button>').join(''));
+    const f=list.filter(c=>(!campAll||isCarCamp(c)) && (!campCity||c.sigungu===campCity));
+    const been=new Set(livePlaces().map(p=>normName(p.name)));
+    $('#campBox').innerHTML='<div class="note">차박 가능 여부는 자리마다 다를 수 있어요. 가기 전에 전화로 한 번 더 확인해 주세요.</div>'+
+      (f.length? '<span class="hint">'+f.length+'곳</span>'+f.slice(0,60).map(c=>poiRow(c, list.indexOf(c), been.has(normName(c.name)))).join('') : '<div class="empty">조건에 맞는 캠핑장이 없어요.</div>');
+  };
+  draw();
+  $('#cf').onclick=e=>{ const a=e.target.closest('[data-a]'); if(a){ campAll=!campAll; draw(); return; } const c=e.target.closest('[data-c]'); if(c){ campCity=c.dataset.c; draw(); } };
+  $('#campBox').onclick=e=>{ const b=e.target.closest('[data-poi]'); if(b) poiSheet(list[+b.dataset.poi]); };
 }
 let photoSido='all';
 function renderPhotos(){
@@ -837,6 +916,11 @@ async function initWrite(q){
     const v=DB.visits.find(x=>x.id===q.v); if(v){ W.editId=v.id; W.fixed=v.placeId; W.date=v.date; W.dateTouched=true; W.memo=v.memo||''; W.photos=(v.photos||[]).map(id=>({id})); }
   } else if(q.p && placeById(q.p)) W.fixed=q.p;
   else if(q.d){ const c=await dongCenter(q.d); const e=IDX.find(x=>x[0]===q.d); if(e){ W.loc=makeLoc(e[0],e[1],e[4],c[0],c[1]); W.locSrc='map'; } }
+  else if(q.ll){
+    const [lon,lat]=q.ll.split(',').map(Number); const l=await locate(lon,lat);
+    if(l){ W.loc=l; W.locSrc='poi'; W.name=q.n||''; W.type=q.t||'관광지';
+      const same=DB.places.find(p=>p.dong===l.code && normName(p.name)===normName(W.name)); W.sel = same ? same.id : 'new'; }
+  }
   else if(q.g){ W.picker={lvl:'g', id:q.g}; }
 }
 function locCard(){
@@ -850,14 +934,14 @@ function locCard(){
       '<span class="hint">사진에 위치 정보가 있으면 자동으로 찾아요. 없으면 아래에서 골라 주세요.</span>'+
       '<div class="btn2"><button class="p" data-a="here">지금 있는 곳</button><button data-a="pick">지도에서 고르기</button></div></div>';
   }
-  const head = W.locSrc==='photo'?'사진에서 찾았어요':W.locSrc==='here'?'지금 있는 곳이에요':'고른 동네';
+  const head = W.locSrc==='photo'?'사진에서 찾았어요':W.locSrc==='here'?'지금 있는 곳이에요':W.locSrc==='poi'?'고른 장소가 있는 동네':'고른 동네';
   const same = placesSorted(DB.places.filter(p=>p.dong===W.loc.code));
   let h='<div class="found"><span class="h">'+IC.pin+head+'</span><span class="w">'+esc(W.loc.name)+'<small>'+esc(addr(W.loc))+'</small></span>'+
     '<div class="btn2"><button data-a="pick">다른 곳이에요</button></div></div>';
   h+='<div class="field"><span class="lbl">어느 장소인가요?</span>';
   if(same.length) h+='<div style="display:flex;flex-wrap:wrap;gap:8px">'+same.map(p=>'<button class="chip" data-sel="'+p.id+'" aria-pressed="'+(W.sel===p.id)+'">'+esc(p.name)+'</button>').join('')+'<button class="chip" data-sel="new" aria-pressed="'+(W.sel!==null&&W.sel==='new')+'">+ 새 장소</button></div>';
   if(!same.length || W.sel==='new'){
-    h+='<input class="inp" id="wName" placeholder="예: 수원화성, 행궁동 칼국수집" value="'+esc(W.name)+'" aria-label="장소 이름">'+
+    h+='<div id="near"></div><input class="inp" id="wName" placeholder="예: 수원화성, 행궁동 칼국수집" value="'+esc(W.name)+'" aria-label="장소 이름">'+
        '<div class="seg" id="wType">'+TYPES.map(t=>'<button data-t="'+t+'" aria-pressed="'+(W.type===t)+'">'+typeIcon(t)+t+'</button>').join('')+'</div>';
   }
   return h+'</div>';
@@ -897,6 +981,21 @@ function drawWrite(){
     (W.editId?'<button class="minibtn warn" id="wDel" style="height:50px;display:flex;align-items:center;justify-content:center;gap:6px">'+IC.x+'이 기록 지우기</button>':'')+
   '</div>';
   hydrate(V);
+  loadNear();
+}
+async function loadNear(){
+  if(!W || !W.loc || !$('#near')) return;
+  const key=W.loc.lon.toFixed(4)+','+W.loc.lat.toFixed(4);
+  if(W.nearKey!==key){
+    W.nearKey=key; W.near=null;
+    $('#near').innerHTML='<span class="hint">근처 관광지·캠핑장을 찾는 중…</span>';
+    const [a,b]=await Promise.allSettled([placesApi({kind:'tour',lon:W.loc.lon,lat:W.loc.lat,radius:1500,rows:12}), placesApi({kind:'campNear',lon:W.loc.lon,lat:W.loc.lat,radius:3000,rows:6})]);
+    if(!W || W.nearKey!==key) return;
+    W.near=[...(a.status==='fulfilled'?a.value:[]), ...(b.status==='fulfilled'?b.value:[])].sort((x,y)=>x.dist-y.dist).slice(0,8);
+  }
+  const box=$('#near'); if(!box || !W.near) return;
+  box.innerHTML = W.near.length ? '<span class="hint" style="display:block;margin-bottom:6px">근처에 이런 곳이 있어요. 누르면 이름이 채워져요.</span><div style="display:flex;flex-wrap:wrap;gap:6px">'+
+    W.near.map((it,i)=>'<button class="chip" data-near="'+i+'" style="display:flex;align-items:center;gap:4px">'+(it.kind==='camp'?IC.tent:IC.mtn)+esc(it.name)+'</button>').join('')+'</div>' : '';
 }
 function bindWrite(){
   V.oninput = e => {
@@ -919,6 +1018,7 @@ function bindWrite(){
     }
     const pb=t.closest('[data-pb]'); if(pb){ const [l,id]=pb.dataset.pb.split(':'); openPicker(l==='kr'?'kr':'sido',id); return; }
     const sel=t.closest('[data-sel]'); if(sel){ W.sel=sel.dataset.sel; drawWrite(); return; }
+    const nr=t.closest('[data-near]'); if(nr && W.near){ const it=W.near[+nr.dataset.near]; W.name=it.name; W.type=it.kind==='camp'?'차박':'관광지'; $('#wName').value=W.name; V.querySelectorAll('#wType button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.t===W.type))); return; }
     const ty=t.closest('#wType button'); if(ty){ W.type=ty.dataset.t; V.querySelectorAll('#wType button').forEach(b=>b.setAttribute('aria-pressed',String(b===ty))); return; }
     const pk=t.closest('#pmap [data-k]');
     if(pk && W.picker){
@@ -1063,7 +1163,7 @@ async function render(){
     else if(seg[0]==='place') renderPlace(seg[1]);
     else if(seg[0]==='visit') renderVisit(seg[1], q);
     else if(seg[0]==='write'){ await initWrite(q); bindWrite(); await renderWrite(); }
-    else if(seg[0]==='camp') renderCamp(seg[1]);
+    else if(seg[0]==='camp') await renderCamp(seg[1], q);
     else if(seg[0]==='list'){
       if(seg[1]==='visited') renderVisited();
       else if(seg[1]==='regions') renderRegions();

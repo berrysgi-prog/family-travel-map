@@ -3,7 +3,7 @@
 // 2) members 는 Supabase에서 만든 가족 계정과 똑같이 맞춰요. (name: 화면에 보일 이름, email: 계정 이메일)
 
 window.FAMILY_CONFIG = {
-  supabaseUrl: 'https://skwxolkwtlsxrgiwasmn.supabase.co/rest/v1/',
+  supabaseUrl: 'https://skwxolkwtlsxrgiwasmn.supabase.co',
   supabaseKey: 'sb_publishable_aPLmHnWn-i3tG5A5Ih-NUA_WUHd92vh',
 
   members: [

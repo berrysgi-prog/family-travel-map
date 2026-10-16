@@ -354,6 +354,16 @@ async function disablePush(){
     if(sub){ await sb.from('push_subs').delete().eq('endpoint', sub.endpoint); await sub.unsubscribe(); }
   }catch(e){}
 }
+let installEvt = null;
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; drawInstall(); });
+window.addEventListener('appinstalled', () => { installEvt = null; drawInstall(); toast('휴대폰에 앱으로 설치했어요'); });
+const isStandalone = () => matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+function drawInstall(){
+  const box=$('#installBox'); if(!box) return;
+  if(!installEvt || isStandalone()){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="found"><span class="h">'+IC.cam+'휴대폰에 앱으로 설치하기</span><span class="hint" style="color:#33485C">설치하면 앱 목록과 홈 화면에 가족 그림 아이콘이 생기고, 주소창 없이 앱처럼 열려요.</span><div class="btn2"><button class="p" id="instBtn">설치하기</button></div></div>';
+  $('#instBtn').onclick=async()=>{ const e=installEvt; installEvt=null; e.prompt(); try{ await e.userChoice; }catch(x){} drawInstall(); };
+}
 let subSynced = false;
 async function drawPushBox(){
   const box = $('#pushBox'), ft = $('#pushFoot'); if(!box) return;
@@ -618,12 +628,14 @@ function renderHome(){
     (recent ? '<a class="linkrow" href="#/place/'+recent.id+'"><span class="k">최근 나들이</span><b>'+esc(recent.name)+' · '+fmtDate(lastVisit(recent.id).date)+'</b><span style="flex:1"></span>'+IC.chev+'</a>'
             : '<div class="empty">아직 기록이 없어요.<br>나들이 사진을 골라 첫 기록을 남겨 보세요.</div>')+
   '</div>'+
+  '<div class="pad" id="installBox" style="padding-top:14px"></div>'+
   '<div class="pad" id="pushBox" style="padding-top:14px"></div>'+
   '<div class="pad" id="oldBox" style="padding-top:14px"></div>'+
   '<div class="foot"><button class="minibtn" id="bkSave">백업 저장</button><button class="minibtn" id="bkLoad">백업 파일 올리기</button></div>'+
   '<div class="foot" id="pushFoot" style="padding-top:8px;align-items:center"></div>'+
   '<div class="foot" style="padding-top:8px;align-items:center"><span class="hint">지금 들어온 사람: '+esc(ME?ME.name:'')+'</span><button class="minibtn" id="logout">나가기</button></div>';
   drawPushBox();
+  drawInstall();
   localOld().then(d=>{
     const box=$('#oldBox'); if(!d || !box) return;
     const n=(d.visits||[]).length;
@@ -980,7 +992,7 @@ async function initWrite(q){
     if(l){ W.loc=l; W.locSrc='poi'; W.name=q.n||''; W.type=q.t||'관광지';
       const same=DB.places.find(p=>p.dong===l.code && normName(p.name)===normName(W.name)); W.sel = same ? same.id : 'new'; }
   }
-  else if(q.g){ W.picker={lvl:'g', id:q.g}; }
+  else if(q.g){ W.pickStart=q.g; }
 }
 function locCard(){
   if(W.fixed){
@@ -990,13 +1002,16 @@ function locCard(){
   if(W.picker) return pickerHTML();
   if(!W.loc){
     return '<div class="found"><span class="h">'+IC.pin+'어디에 다녀오셨나요?</span>'+
-      '<span class="hint">사진에 위치 정보가 있으면 자동으로 찾아요. 없으면 아래에서 골라 주세요.</span>'+
-      '<div class="btn2"><button class="p" data-a="here">지금 있는 곳</button><button data-a="pick">지도에서 고르기</button></div></div>';
+      '<span class="hint">장소 이름을 검색하면 위치를 알아서 찾아요. 사진에 위치 정보가 있으면 자동으로 채워져요.</span>'+
+      '<div style="display:flex;gap:8px"><input class="inp" id="wq" placeholder="예: 수원화성, 남이섬" value="'+esc(W.q||'')+'" enterkeyhint="search" aria-label="장소 이름 검색" style="flex:1;min-width:0"><button class="cta" data-a="search" style="width:84px;height:56px;font-size:17px;box-shadow:none">찾기</button></div>'+
+      '<div class="stack" id="sres">'+searchResHTML()+'</div>'+
+      '<div class="btn2"><button data-a="here">지금 있는 곳</button><button data-a="pick">지도에서 고르기</button></div></div>';
   }
-  const head = W.locSrc==='photo'?'사진에서 찾았어요':W.locSrc==='here'?'지금 있는 곳이에요':W.locSrc==='poi'?'고른 장소가 있는 동네':'고른 동네';
+  const head = W.locSrc==='photo'?'사진에서 찾았어요':W.locSrc==='here'?'지금 있는 곳이에요':W.locSrc==='poi'||W.locSrc==='search'?'찾은 장소가 있는 동네':'고른 동네';
   const same = placesSorted(DB.places.filter(p=>p.dong===W.loc.code));
-  let h='<div class="found"><span class="h">'+IC.pin+head+'</span><span class="w">'+esc(W.loc.name)+'<small>'+esc(addr(W.loc))+'</small></span>'+
-    '<div class="btn2"><button data-a="pick">다른 곳이에요</button></div></div>';
+  const named = (W.locSrc==='search'||W.locSrc==='poi') && W.name;
+  let h='<div class="found"><span class="h">'+IC.pin+(named?'찾은 장소':head)+'</span><span class="w">'+esc(named?W.name:W.loc.name)+'<small>'+esc(addr(W.loc))+'</small></span>'+
+    '<div class="btn2"><button data-a="reset">다른 곳이에요</button></div></div>';
   h+='<div class="field"><span class="lbl">어느 장소인가요?</span>';
   if(same.length) h+='<div style="display:flex;flex-wrap:wrap;gap:8px">'+same.map(p=>'<button class="chip" data-sel="'+p.id+'" aria-pressed="'+(W.sel===p.id)+'">'+esc(p.name)+'</button>').join('')+'<button class="chip" data-sel="new" aria-pressed="'+(W.sel!==null&&W.sel==='new')+'">+ 새 장소</button></div>';
   if(!same.length || W.sel==='new'){
@@ -1004,6 +1019,30 @@ function locCard(){
        '<div class="seg" id="wType">'+TYPES.map(t=>'<button data-t="'+t+'" aria-pressed="'+(W.type===t)+'">'+typeIcon(t)+t+'</button>').join('')+'</div>';
   }
   return h+'</div>';
+}
+function searchResHTML(){
+  if(W.searching) return '<span class="hint">찾는 중…</span>';
+  if(W.searchErr) return '<span class="hint">'+esc(W.searchErr)+'</span>';
+  if(!W.results) return '';
+  if(!W.results.length) return '<span class="hint">"'+esc(W.q)+'"(으)로 찾은 곳이 없어요. 다른 이름으로 찾거나 지도에서 골라 주세요.</span>';
+  return W.results.map((it,i)=>'<button class="row" data-res="'+i+'" style="padding:10px 12px"><span class="t"><span class="n">'+esc(it.name)+'<span class="tag '+(it.kind==='camp'?'차박':'관광지')+'">'+esc(it.cat||'')+'</span></span><span class="m">'+esc(it.addr)+'</span></span>'+IC.chev+'</button>').join('');
+}
+async function doSearch(){
+  const q=($('#wq')?$('#wq').value:'').trim(); W.q=q;
+  if(q.length<2){ toast('두 글자 이상 적어 주세요'); return; }
+  W.searching=true; W.searchErr=''; W.results=null; $('#sres').innerHTML=searchResHTML();
+  try{ W.results = await placesApi({kind:'search', keyword:q}); }
+  catch(e){ W.searchErr = apiErrText(e); }
+  W.searching=false; if($('#sres')) $('#sres').innerHTML=searchResHTML();
+}
+async function pickResult(it){
+  busy('위치를 찾는 중…');
+  const l = await locate(it.lon, it.lat); busy();
+  if(!l){ toast('이 장소의 동네를 찾지 못했어요. 지도에서 골라 주세요'); return; }
+  W.loc=l; W.locSrc='search'; W.name=it.name; W.type=it.kind==='camp'?'차박':it.cat==='음식점'||it.cat==='숙박'||it.cat==='쇼핑'?'기타':'관광지';
+  const same=DB.places.find(p=>p.dong===l.code && normName(p.name)===normName(it.name));
+  W.sel = same ? same.id : 'new'; W.results=null; W.q='';
+  drawWrite();
 }
 function pickerHTML(){
   const P=W.picker;
@@ -1043,7 +1082,7 @@ function drawWrite(){
   loadNear();
 }
 async function loadNear(){
-  if(!W || !W.loc || !$('#near')) return;
+  if(!W || !W.loc || !$('#near') || W.locSrc==='search' || W.locSrc==='poi') return;
   const key=W.loc.lon.toFixed(4)+','+W.loc.lat.toFixed(4);
   if(W.nearKey!==key){
     W.nearKey=key; W.near=null;
@@ -1057,6 +1096,7 @@ async function loadNear(){
     W.near.map((it,i)=>'<button class="chip" data-near="'+i+'" style="display:flex;align-items:center;gap:4px">'+(it.kind==='camp'?IC.tent:IC.mtn)+esc(it.name)+'</button>').join('')+'</div>' : '';
 }
 function bindWrite(){
+  V.onkeydown = e => { if(e.target.id==='wq' && e.key==='Enter'){ e.preventDefault(); doSearch(); } };
   V.oninput = e => {
     if(e.target.id==='wName') W.name=e.target.value;
     if(e.target.id==='wMemo') W.memo=e.target.value;
@@ -1070,12 +1110,15 @@ function bindWrite(){
       const act=a.dataset.a;
       if(act==='add') $('#fileIn').click();
       if(act==='here') useHere();
-      if(act==='pick') openPicker('kr');
+      if(act==='pick'){ if(W.pickStart) openPicker('g', W.pickStart); else openPicker('kr'); }
+      if(act==='reset'){ W.loc=null; W.sel=null; W.name=''; W.locSrc=''; W.near=null; W.nearKey=null; drawWrite(); setTimeout(()=>$('#wq')&&$('#wq').focus(),50); }
+      if(act==='search') doSearch();
       if(act==='pclose'){ W.picker=null; drawWrite(); }
       if(act==='close'){ if(history.length>1) history.back(); else location.hash='#/'; }
       return;
     }
     const pb=t.closest('[data-pb]'); if(pb){ const [l,id]=pb.dataset.pb.split(':'); openPicker(l==='kr'?'kr':'sido',id); return; }
+    const rs=t.closest('[data-res]'); if(rs && W.results){ pickResult(W.results[+rs.dataset.res]); return; }
     const sel=t.closest('[data-sel]'); if(sel){ W.sel=sel.dataset.sel; drawWrite(); return; }
     const nr=t.closest('[data-near]'); if(nr && W.near){ const it=W.near[+nr.dataset.near]; W.name=it.name; W.type=it.kind==='camp'?'차박':'관광지'; $('#wName').value=W.name; V.querySelectorAll('#wType button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.t===W.type))); return; }
     const ty=t.closest('#wType button'); if(ty){ W.type=ty.dataset.t; V.querySelectorAll('#wType button').forEach(b=>b.setAttribute('aria-pressed',String(b===ty))); return; }
@@ -1212,7 +1255,7 @@ async function render(){
   const [path,qs]=h.slice(1).split('?');
   const q=Object.fromEntries(new URLSearchParams(qs||''));
   const seg=path.split('/').filter(Boolean);
-  V.onclick=null; V.oninput=null;
+  V.onclick=null; V.oninput=null; V.onkeydown=null;
   $('#brand').classList.toggle('hidden', !seg.length);
   document.querySelectorAll('.sheet-bg,.viewer').forEach(x=>x.remove());
   try{
@@ -1271,6 +1314,7 @@ function renderLogin(err){
   $('#go').onclick=go;
   $('#pw').onkeydown=e=>{ if(e.key==='Enter') go(); };
 }
+let started = false;
 async function start(){
   const {data} = await sb.auth.getSession();
   const s = data && data.session;
@@ -1285,7 +1329,8 @@ async function start(){
     else { busy(); V.innerHTML='<div class="top"><div class="empty">가족 기록을 불러오지 못했어요. 인터넷 연결을 확인하고 다시 열어 주세요.</div></div>'; return; }
   }
   busy();
-  if(!location.hash.startsWith('#/write')) render();
+  if(!started || !location.hash.startsWith('#/write')) render();
+  started = true;
 }
 let lastSync = Date.now();
 document.addEventListener('visibilitychange', async()=>{
